@@ -5,7 +5,7 @@ import "core:c"
 
 when ODIN_OS == .Darwin {
 	foreign import lib "system:System"
-} else when ODIN_OS == .FreeBSD || ODIN_OS == .NetBSD || ODIN_OS == .Linux {
+} else when (ODIN_OS == .FreeBSD || ODIN_OS == .NetBSD || ODIN_OS == .Linux) && ODIN_PLATFORM_SUBTARGET != .Android {// NOTE(SpaceTravelCompany) : Android doesn't use pthread library.
 	foreign import lib "system:pthread"
 } else {
 	foreign import lib "system:c"
