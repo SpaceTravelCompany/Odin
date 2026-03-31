@@ -644,7 +644,17 @@ try_cross_linking:;
 							//                local to the executable (unless the system collection is used, in which case we search
 							//                the system library paths for the library file).
 							if (string_ends_with(lib, str_lit(".a")) || string_ends_with(lib, str_lit(".o")) || string_ends_with(lib, str_lit(".so")) || string_contains_string(lib, str_lit(".so."))) {
+							#if defined(GB_SYSTEM_WINDOWS) // NOTE(SpaceTravelCompany): fix(linker): fix absolute library path handling on Windows for cross-compilation
+								bool is_absolute = (lib.len >= 3 && lib[1] == ':' && (lib[2] == '/' || lib[2] == '\\')) ||
+								                   (lib.len >= 1 && (lib[0] == '/' || lib[0] == '\\'));
+								if (is_absolute) {
+								    lib_str = gb_string_append_fmt(lib_str, " \"%.*s\" ", LIT(lib));
+								} else {
+								    lib_str = gb_string_append_fmt(lib_str, " -l:\"%.*s\" ", LIT(lib));
+								}
+							#else
 								lib_str = gb_string_append_fmt(lib_str, " -l:\"%.*s\" ", LIT(lib));
+							#endif
 							} else {
 								// dynamic or static system lib, just link regularly searching system library paths
 								lib_str = gb_string_append_fmt(lib_str, " -l%.*s ", LIT(lib));
