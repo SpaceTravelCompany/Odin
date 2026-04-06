@@ -295,6 +295,9 @@ enum BuildPath : u8 {
 	BuildPath_Output,           // Output Path for .exe, .dll, .so, etc. Can be overridden with `-out:`.
 	BuildPath_Symbols,          // Output Path for .pdb or .dSym file, can be overridden with `-pdb-name:`.
 
+	BuildPath_Win_SDK_UM_Include,     // windows_sdk_um_include_path
+	BuildPath_Win_SDK_Shared_Include, // windows_sdk_shared_include_path
+
 	BuildPathCOUNT,
 };
 
@@ -2356,6 +2359,13 @@ gb_internal bool init_build_paths(String init_filename) {
 
 				if (find_result.windows_sdk_ucrt_library_path.len > 0) {
 					bc->build_paths[BuildPath_Win_SDK_UCRT_Lib] = path_from_string(ha, find_result.windows_sdk_ucrt_library_path);
+				}
+				if (find_result.windows_sdk_um_include_path.len > 0) {
+					// SpaceTravelCompanay: Pass through SDK include paths for rc.exe include resolution (winres.h).
+					bc->build_paths[BuildPath_Win_SDK_UM_Include] = path_from_string(ha, find_result.windows_sdk_um_include_path);
+				}
+				if (find_result.windows_sdk_shared_include_path.len > 0) {
+					bc->build_paths[BuildPath_Win_SDK_Shared_Include] = path_from_string(ha, find_result.windows_sdk_shared_include_path);
 				}
 
 				if (find_result.vs_exe_path.len > 0) {

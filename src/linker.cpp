@@ -327,6 +327,10 @@ try_cross_linking:;
 
 			String windows_sdk_bin_path = path_to_string(heap_allocator(), build_context.build_paths[BuildPath_Win_SDK_Bin_Path]);
 			defer (gb_free(heap_allocator(), windows_sdk_bin_path.text));
+			String windows_sdk_um_include_path = path_to_string(heap_allocator(), build_context.build_paths[BuildPath_Win_SDK_UM_Include]);
+			defer (gb_free(heap_allocator(), windows_sdk_um_include_path.text));
+			String windows_sdk_shared_include_path = path_to_string(heap_allocator(), build_context.build_paths[BuildPath_Win_SDK_Shared_Include]);
+			defer (gb_free(heap_allocator(), windows_sdk_shared_include_path.text));
 
 			gbString lld_lto_flags = gb_string_make(heap_allocator(), "");
 			defer (gb_string_free(lld_lto_flags));
@@ -389,9 +393,26 @@ try_cross_linking:;
 					} else {
 						debugf("Compiling resource %.*s\n", LIT(res_path));
 
+						String rc_include_flags = {};
+
+						// SpaceTravelCompanay: Auto-add Windows SDK include paths for rc.exe so winres.h works.
+						if (windows_sdk_um_include_path.len > 0) {
+							rc_include_flags = concatenate3_strings(temporary_allocator(), STR_LIT("/i \""), windows_sdk_um_include_path, STR_LIT("\""));
+						}
+						if (windows_sdk_shared_include_path.len > 0) {
+							String shared_flag = concatenate3_strings(temporary_allocator(), STR_LIT("/i \""), windows_sdk_shared_include_path, STR_LIT("\""));
+							if (rc_include_flags.len > 0) {
+								rc_include_flags = concatenate3_strings(temporary_allocator(), rc_include_flags, STR_LIT(" "), shared_flag);
+							} else {
+								rc_include_flags = shared_flag;
+							}
+						}
+
 						result = system_exec_command_line_app("msvc-link",
-							"\"%.*src.exe\" /nologo /fo %.*s %.*s",
+							// "\"%.*src.exe\" /nologo /fo %.*s %.*s",
+							"\"%.*src.exe\" %.*s /nologo /fo %.*s %.*s",
 							LIT(windows_sdk_bin_path),
+							LIT(rc_include_flags),
 							LIT(res_path),
 							LIT(rc_path)
 						);

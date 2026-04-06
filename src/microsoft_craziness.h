@@ -53,6 +53,8 @@ struct Find_Result {
 	String windows_sdk_bin_path;
 	String windows_sdk_um_library_path;
 	String windows_sdk_ucrt_library_path;
+	String windows_sdk_um_include_path;
+	String windows_sdk_shared_include_path;
 
 	String vs_exe_path;
 	String vs_library_path;
@@ -332,15 +334,20 @@ gb_internal void find_windows_kit_paths(Find_Result *result) {
 		defer (mc_free(data_bin.best_name));
 
 		if (data_lib.best_name.len && data_bin.best_name.len) {
+			String version = substring(data_lib.best_name, windows10_lib.len, data_lib.best_name.len);
 			if (build_context.metrics.arch == TargetArch_amd64) {
 				result->windows_sdk_um_library_path   = mc_concat(data_lib.best_name, str_lit("\\um\\x64\\"));
 				result->windows_sdk_ucrt_library_path = mc_concat(data_lib.best_name, str_lit("\\ucrt\\x64\\"));
 				result->windows_sdk_bin_path          = mc_concat(data_bin.best_name, str_lit("\\x64\\"));
+				result->windows_sdk_um_include_path   = mc_concat(windows10_root, str_lit("Include\\"), version, str_lit("\\um\\"));
+				result->windows_sdk_shared_include_path = mc_concat(windows10_root, str_lit("Include\\"), version, str_lit("\\shared\\"));
 				sdk_found = true;
 			} else if (build_context.metrics.arch == TargetArch_i386) {
 				result->windows_sdk_um_library_path   = mc_concat(data_lib.best_name, str_lit("\\um\\x86\\"));
 				result->windows_sdk_ucrt_library_path = mc_concat(data_lib.best_name, str_lit("\\ucrt\\x86\\"));
 				result->windows_sdk_bin_path          = mc_concat(data_bin.best_name, str_lit("\\x86\\"));
+				result->windows_sdk_um_include_path   = mc_concat(windows10_root, str_lit("Include\\"), version, str_lit("\\um\\"));
+				result->windows_sdk_shared_include_path = mc_concat(windows10_root, str_lit("Include\\"), version, str_lit("\\shared\\"));
 				sdk_found = true;
 			}
 		}
@@ -784,6 +791,8 @@ gb_internal Find_Result find_visual_studio_and_windows_sdk() {
 	printf("windows_sdk_bin_path:          %.*s\n", LIT(r.windows_sdk_bin_path));
 	printf("windows_sdk_um_library_path:   %.*s\n", LIT(r.windows_sdk_um_library_path));
 	printf("windows_sdk_ucrt_library_path: %.*s\n", LIT(r.windows_sdk_ucrt_library_path));
+	printf("windows_sdk_um_include_path:   %.*s\n", LIT(r.windows_sdk_um_include_path));
+	printf("windows_sdk_shared_include_path: %.*s\n", LIT(r.windows_sdk_shared_include_path));
 	printf("vs_exe_path:                   %.*s\n", LIT(r.vs_exe_path));
 	printf("vs_library_path:               %.*s\n", LIT(r.vs_library_path));
 
