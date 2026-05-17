@@ -36,6 +36,8 @@ $ODIN test ../test_issue_5699.odin $COMMON
 $ODIN test ../test_issue_6068.odin $COMMON
 $ODIN test ../test_issue_6101.odin $COMMON
 $ODIN test ../test_issue_6165.odin $COMMON
+$ODIN test ../test_issue_6344.odin $COMMON
+$ODIN test ../test_issue_6344.odin $COMMON -o:speed
 $ODIN test ../test_issue_6396.odin $COMMON
 $ODIN test ../test_pr_6476.odin $COMMON
 
@@ -46,6 +48,18 @@ else
 	exit 1
 fi
 if [[ $($ODIN build ../test_issue_6401.odin $COMMON 2>&1 >/dev/null | grep -c "Error:") -eq 3 ]] ; then
+	echo "SUCCESSFUL 1/1"
+else
+	echo "SUCCESSFUL 0/1"
+	exit 1
+fi
+if [[ $($ODIN build ../test_issue_6594.odin $COMMON 2>&1 >/dev/null | grep -c "Error:") -eq 1 ]] ; then
+	echo "SUCCESSFUL 1/1"
+else
+	echo "SUCCESSFUL 0/1"
+	exit 1
+fi
+if [[ $($ODIN build ../test_issue_6621.odin $COMMON 2>&1 >/dev/null | grep -c "Error:") -eq 1 ]] ; then
 	echo "SUCCESSFUL 1/1"
 else
 	echo "SUCCESSFUL 0/1"

@@ -4,6 +4,7 @@ package intrinsics
 
 import "base:runtime"
 
+
 // Package-Related
 is_package_imported :: proc(package_name: string) -> bool ---
 
@@ -348,13 +349,27 @@ simd_trunc   :: proc(a: #simd[N]any_float) -> #simd[N]any_float ---
 // rounding to the nearest integral value; if two values are equally near, rounds to the even one
 simd_nearest :: proc(a: #simd[N]any_float) -> #simd[N]any_float ---
 
-simd_to_bits :: proc(v: #simd[N]T) -> #simd[N]Integer where size_of(T) == size_of(Integer), type_is_unsigned(Integer) ---
+simd_approx_recip      :: proc(x: #simd[N]T) -> #simd[N]T where type_is_float(T)) ---
+simd_approx_recip_sqrt :: proc(x: #simd[N]T) -> #simd[N]T where type_is_float(T)) ---
+
+simd_to_bits        :: proc(v: #simd[N]T) -> #simd[N]Integer where size_of(T) == size_of(Integer), type_is_unsigned(Integer) ---
+simd_to_bits_signed :: proc(v: #simd[N]T) -> #simd[N]Integer where size_of(T) == size_of(Integer), !type_is_unsigned(Integer) ---
 
 // equivalent to a swizzle with descending indices, e.g. reserve(a, 3, 2, 1, 0)
 simd_lanes_reverse :: proc(a: #simd[N]T) -> #simd[N]T ---
 
 simd_lanes_rotate_left  :: proc(a: #simd[N]T, $offset: int) -> #simd[N]T ---
 simd_lanes_rotate_right :: proc(a: #simd[N]T, $offset: int) -> #simd[N]T ---
+
+// return {b[0], a[1], b[2], a[3], ...}
+simd_odd_even :: proc(a, b: #simd[N]T) -> #simd[N]T ---
+
+// Returns the sums of N consecutive lanes
+simd_sums_of_n :: proc(a: #simd[LANES]T, $N: uint) -> #simd[LANES/N]T where is_power_of_two(N) ---
+
+simd_pairwise_add :: proc(a, b: #simd[LANES]T) -> #simd[LANES/N]T ---
+simd_pairwise_sub :: proc(a, b: #simd[LANES]T) -> #simd[LANES/N]T ---
+
 
 // Checks if the current target supports the given target features.
 //
@@ -389,6 +404,14 @@ wasm_memory_atomic_notify32 :: proc(ptr: ^u32, waiters: u32) -> (waiters_woken_u
 x86_cpuid  :: proc(ax, cx: u32) -> (eax, ebx, ecx, edx: u32) ---
 x86_xgetbv :: proc(cx: u32) -> (eax, edx: u32) ---
 
+
+// C specific things
+c_va_list  :: struct{/*platform specific implementation*/}
+
+c_va_start :: proc(list: ^c_va_list, /*#c_vararg parameter*/ args: ..$T) ---
+c_va_end   :: proc(list: ^c_va_list)                                     ---
+c_va_copy  :: proc(dst, src: ^c_va_list)                                 ---
+c_va_arg   :: proc(list: ^c_va_list, $T: typeid) -> T                    ---
 
 
 // Darwin targets only

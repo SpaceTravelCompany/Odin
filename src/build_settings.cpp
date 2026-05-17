@@ -17,11 +17,9 @@ enum TargetOsKind : u16 {
 	TargetOs_windows,
 	TargetOs_darwin,
 	TargetOs_linux,
-	TargetOs_essence,
 	TargetOs_freebsd,
 	TargetOs_openbsd,
 	TargetOs_netbsd,
-	TargetOs_haiku,
 	
 	TargetOs_wasi,
 	TargetOs_js,
@@ -37,11 +35,9 @@ gb_global String target_os_names[TargetOs_COUNT] = {
 	str_lit("windows"),
 	str_lit("darwin"),
 	str_lit("linux"),
-	str_lit("essence"),
 	str_lit("freebsd"),
 	str_lit("openbsd"),
 	str_lit("netbsd"),
-	str_lit("haiku"),
 
 	str_lit("wasi"),
 	str_lit("js"),
@@ -371,7 +367,7 @@ enum OptInFeatureFlags : u64 {
 	                                             OptInFeatureFlag_IntegerDivisionByZero_AllBits,
 
 	OptInFeatureFlag_ForceTypeAssert = 1u<<6,
-  OptInFeatureFlag_UsingStmt       = 1u<<7,
+	OptInFeatureFlag_UsingStmt       = 1u<<7,
 };
 
 u64 get_feature_flag_from_name(String const &name) {
@@ -461,6 +457,7 @@ enum IntegerDivisionByZeroKind : u8 {
 	IntegerDivisionByZero_Self,
 	IntegerDivisionByZero_AllBits,
 };
+
 
 // This stores the information for the specify architecture of this build
 struct BuildContext {
@@ -581,7 +578,7 @@ struct BuildContext {
 	bool internal_by_value;
 	bool internal_weak_monomorphization;
 	bool internal_ignore_llvm_verification;
-	bool internal_llvm_mem2reg;
+	bool internal_llvm_no_sroa;
 
 	bool   enable_rvo;
 
@@ -779,20 +776,6 @@ gb_global TargetMetrics target_netbsd_arm64 = {
 	str_lit("aarch64-unknown-netbsd-elf"),
 };
 
-gb_global TargetMetrics target_haiku_amd64 = {
-	TargetOs_haiku,
-	TargetArch_amd64,
-	8, 8, AMD64_MAX_ALIGNMENT, 32,
-	str_lit("x86_64-unknown-haiku"),
-};
-
-gb_global TargetMetrics target_essence_amd64 = {
-	TargetOs_essence,
-	TargetArch_amd64,
-	8, 8, AMD64_MAX_ALIGNMENT, 32,
-	str_lit("x86_64-pc-none-elf"),
-};
-
 
 gb_global TargetMetrics target_freestanding_wasm32 = {
 	TargetOs_freestanding,
@@ -902,8 +885,6 @@ gb_global NamedTargetMetrics named_targets[] = {
 	{ str_lit("darwin_amd64"),        &target_darwin_amd64   },
 	{ str_lit("darwin_arm64"),        &target_darwin_arm64   },
 
-	{ str_lit("essence_amd64"),       &target_essence_amd64  },
-
 	{ str_lit("linux_i386"),          &target_linux_i386     },
 	{ str_lit("linux_amd64"),         &target_linux_amd64    },
 	{ str_lit("linux_arm64"),         &target_linux_arm64    },
@@ -921,7 +902,6 @@ gb_global NamedTargetMetrics named_targets[] = {
 	{ str_lit("netbsd_arm64"),        &target_netbsd_arm64   },
 
 	{ str_lit("openbsd_amd64"),       &target_openbsd_amd64  },
-	{ str_lit("haiku_amd64"),         &target_haiku_amd64    },
 
 	{ str_lit("freestanding_wasm32"), &target_freestanding_wasm32 },
 	{ str_lit("wasi_wasm32"),         &target_wasi_wasm32 },
@@ -1179,58 +1159,6 @@ gb_internal String internal_odin_root_dir(void) {
 
 
 	array_free(&path_buf);
-
-	return path;
-}
-
-#elif defined(GB_SYSTEM_HAIKU)
-
-#include <FindDirectory.h>
-
-gb_internal String path_to_fullpath(gbAllocator a, String s, bool *ok_);
-
-gb_internal String internal_odin_root_dir(void) {
-	String path = global_module_path;
-	isize len, i;
-	u8 *text;
-
-	if (global_module_path_set) {
-		return global_module_path;
-	}
-
-	TEMPORARY_ALLOCATOR_GUARD();
-	auto path_buf = array_make<char>(temporary_allocator(), 300);
-
-	len = 0;
-	for (;;) {
-		u32 sz = path_buf.count;
-		int res = find_path(B_APP_IMAGE_SYMBOL, B_FIND_PATH_IMAGE_PATH, nullptr, &path_buf[0], sz);
-		if(res == B_OK) {
-			len = sz;
-			break;
-		} else {
-			array_resize(&path_buf, sz + 1);
-		}
-	}
-
-	mutex_lock(&string_buffer_mutex);
-	defer (mutex_unlock(&string_buffer_mutex));
-
-	text = permanent_alloc_array<u8>(len + 1);
-	gb_memmove(text, &path_buf[0], len);
-
-	path = path_to_fullpath(heap_allocator(), make_string(text, len), nullptr);
-
-	for (i = path.len-1; i >= 0; i--) {
-		u8 c = path[i];
-		if (c == '/' || c == '\\') {
-			break;
-		}
-		path.len--;
-	}
-
-	global_module_path = path;
-	global_module_path_set = true;
 
 	return path;
 }
@@ -1840,8 +1768,6 @@ gb_internal void init_build_context(TargetMetrics *cross_target, Subtarget subta
 			#else
 				metrics = &target_netbsd_amd64;
 			#endif
-		#elif defined(GB_SYSTEM_HAIKU)
-			metrics = &target_haiku_amd64;
 		#elif defined(GB_CPU_ARM)
 			metrics = &target_linux_arm64;
 		#elif defined(GB_CPU_RISCV)
@@ -2218,18 +2144,18 @@ gb_internal bool check_target_feature_is_enabled(String const &feature, String *
 		}
 		if (feature_str == "") break;
 
-		if (!string_set_exists(&build_context.target_features_set, str)) {
-			String plus_str = concatenate_strings(temporary_allocator(), make_string_c("+"), feature_str);
-
-			if (want_enabled && !string_set_exists(&build_context.target_features_set, plus_str)) {
-				if (not_enabled) *not_enabled = str;
-				return false;
-			}
-		}
-
+		String plus_str  = concatenate_strings(temporary_allocator(), make_string_c("+"), feature_str);
 		String minus_str = concatenate_strings(temporary_allocator(), make_string_c("-"), feature_str);
-
-		if (!want_enabled && !string_set_exists(&build_context.target_features_set, minus_str)) {
+		
+		bool has_raw   = string_set_exists(&build_context.target_features_set, feature_str);
+		bool has_plus  = string_set_exists(&build_context.target_features_set, plus_str);
+		bool has_minus = string_set_exists(&build_context.target_features_set, minus_str);
+		
+		// NOTE(jakubtomsu): this way "feature" and "+feature" is ALWAYS equivalent,
+		// and also allows the minus sign to do a final override.
+		bool is_enabled = (has_plus || has_raw) && !has_minus;
+		
+		if (want_enabled != is_enabled) {
 			if (not_enabled) *not_enabled = str;
 			return false;
 		}
@@ -2263,9 +2189,6 @@ gb_internal String infer_object_extension_from_build_context() {
 		default:
 		case TargetOs_darwin:
 		case TargetOs_linux:
-		case TargetOs_essence:
-			output_extension = STR_LIT("o");
-			break;
 
 		case TargetOs_freestanding:
 			switch (build_context.metrics.abi) {
@@ -2397,9 +2320,6 @@ gb_internal bool init_build_paths(String init_filename) {
 			output_extension = STR_LIT("so");
 		} else if (build_context.metrics.os == TargetOs_windows) {
 			output_extension = STR_LIT("exe");
-		} else if (build_context.cross_compiling && selected_target_metrics->metrics == &target_essence_amd64) {
-			// Do nothing: we don't want the .bin extension
-			// when cross compiling
 		} else if (path_is_directory(last_path_element(bc->build_paths[BuildPath_Main_Package].basename))) {
 			// Add .bin extension to avoid collision
 			// with package directory name
@@ -2618,11 +2538,9 @@ gb_internal bool init_build_paths(String init_filename) {
 		switch (build_context.metrics.os) {
 		case TargetOs_linux:
 		case TargetOs_darwin:
-		case TargetOs_essence:
 		case TargetOs_freebsd:
 		case TargetOs_openbsd:
 		case TargetOs_netbsd:
-		case TargetOs_haiku:
 			gb_printf_err("-no-crt on Unix systems requires either -default-to-nil-allocator or -default-to-panic-allocator to also be present, because the default allocator requires CRT\n");
 			no_crt_checks_failed = true;
 		}
@@ -2632,11 +2550,9 @@ gb_internal bool init_build_paths(String init_filename) {
 		switch (build_context.metrics.os) {
 		case TargetOs_linux:
 		case TargetOs_darwin:
-		case TargetOs_essence:
 		case TargetOs_freebsd:
 		case TargetOs_openbsd:
 		case TargetOs_netbsd:
-		case TargetOs_haiku:
 			gb_printf_err("-no-crt on Unix systems requires the -no-thread-local flag to also be present, because the TLS is inaccessible without CRT\n");
 			no_crt_checks_failed = true;
 		}

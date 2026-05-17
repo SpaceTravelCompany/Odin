@@ -1028,6 +1028,27 @@ gb_internal lbValue lb_const_value(lbModule *m, Type *type, ExactValue value, lb
 
 		res.value = llvm_const_array(m, et, elems, cast(unsigned)count);
 		return res;
+	} else if (is_type_u16_array(type) && (value.kind == ExactValue_String || value.kind == ExactValue_String16) && !is_type_u8(core_array_type(type))) {
+		i64 count  = type->Array.count;
+		Type *elem = type->Array.elem;
+		LLVMTypeRef et = lb_type(m, elem);
+
+		String16 s = {};
+		if (value.kind == ExactValue_String16) {
+			s = value.value_string16;
+		} else {
+			s = string_to_string16(temporary_allocator(), value.value_string);
+		}
+
+		LLVMValueRef *elems = gb_alloc_array(permanent_allocator(), LLVMValueRef, cast(isize)count);
+
+		for (isize i = 0; i < s.len; i++) {
+			elems[i] = LLVMConstInt(et, s.text[i], false);
+
+		}
+
+		res.value = llvm_const_array(m, et, elems, cast(unsigned)count);
+		return res;
 	} else if (is_type_u8_array(type) && value.kind == ExactValue_String) {
 		GB_ASSERT(type->Array.count == value.value_string.len);
 		LLVMValueRef data = LLVMConstStringInContext(ctx,
@@ -1476,17 +1497,24 @@ gb_internal lbValue lb_const_value(lbModule *m, Type *type, ExactValue value, lb
 				return res;
 			} else {
 				// Assume that compound value is an array literal
-				GB_ASSERT_MSG(elem_count == type->Array.count, "%td != %td", elem_count, type->Array.count);
+				GB_ASSERT_MSG(elem_count <= type->Array.count, "%td <= %td", elem_count, type->Array.count);
 
 				LLVMValueRef *values = gb_alloc_array(temporary_allocator(), LLVMValueRef, cast(isize)type->Array.count);
 
+				isize elem_index = 0;
 				for (isize i = 0; i < elem_count; i++) {
 					TypeAndValue tav = cl->elems[i]->tav;
 					GB_ASSERT(tav.mode != Addressing_Invalid);
-					values[i] = lb_const_value(m, elem_type, tav.value, cc, tav.type).value;
+					if (is_type_tuple(tav.type)) {
+						elem_index += tav.type->Tuple.variables.count;
+					} else {
+						values[elem_index++] = lb_const_value(m, elem_type, tav.value, cc, tav.type).value;
+					}
 				}
-				for (isize i = elem_count; i < type->Array.count; i++) {
-					values[i] = LLVMConstNull(lb_type(m, elem_type));
+				for (isize i = 0; i < type->Array.count; i++) {
+					if (values[i] == nullptr) {
+						values[i] = LLVMConstNull(lb_type(m, elem_type));
+					}
 				}
 
 				res.value = lb_build_constant_array_values(m, type, elem_type, cast(isize)type->Array.count, values, cc);
@@ -1560,20 +1588,28 @@ gb_internal lbValue lb_const_value(lbModule *m, Type *type, ExactValue value, lb
 				res.value = lb_build_constant_array_values(m, type, elem_type, cast(isize)type->EnumeratedArray.count, values, cc);
 				return res;
 			} else {
-				GB_ASSERT_MSG(elem_count == type->EnumeratedArray.count, "%td != %td", elem_count, type->EnumeratedArray.count);
+				// Assume that compound value is an array literal
+				GB_ASSERT_MSG(elem_count <= type->EnumeratedArray.count, "%td <= %td", elem_count, type->EnumeratedArray.count);
 
 				LLVMValueRef *values = gb_alloc_array(temporary_allocator(), LLVMValueRef, cast(isize)type->EnumeratedArray.count);
 
+				isize elem_index = 0;
 				for (isize i = 0; i < elem_count; i++) {
 					TypeAndValue tav = cl->elems[i]->tav;
 					GB_ASSERT(tav.mode != Addressing_Invalid);
-					values[i] = lb_const_value(m, elem_type, tav.value, cc, tav.type).value;
+					if (is_type_tuple(tav.type)) {
+						elem_index += tav.type->Tuple.variables.count;
+					} else {
+						values[elem_index++] = lb_const_value(m, elem_type, tav.value, cc, tav.type).value;
+					}
 				}
-				for (isize i = elem_count; i < type->EnumeratedArray.count; i++) {
-					values[i] = LLVMConstNull(lb_type(m, elem_type));
+				for (isize i = 0; i < type->EnumeratedArray.count; i++) {
+					if (values[i] == nullptr) {
+						values[i] = LLVMConstNull(lb_type(m, elem_type));
+					}
 				}
 
-				res.value = lb_build_constant_array_values(m, type, elem_type, cast(isize)type->EnumeratedArray.count, values, cc);
+				res.value = lb_build_constant_array_values(m, type, elem_type, cast(isize)type->Array.count, values, cc);
 				return res;
 			}
 		} else if (is_type_fixed_capacity_dynamic_array(type)) {
@@ -1666,16 +1702,23 @@ gb_internal lbValue lb_const_value(lbModule *m, Type *type, ExactValue value, lb
 
 				LLVMValueRef *values = gb_alloc_array(temporary_allocator(), LLVMValueRef, cast(isize)capacity);
 
+				isize elem_index = 0;
 				for (isize i = 0; i < elem_count; i++) {
 					TypeAndValue tav = cl->elems[i]->tav;
 					GB_ASSERT(tav.mode != Addressing_Invalid);
-					values[i] = lb_const_value(m, elem_type, tav.value, cc, tav.type).value;
+					if (is_type_tuple(tav.type)) {
+						elem_index += tav.type->Tuple.variables.count;
+					} else {
+						values[elem_index++] = lb_const_value(m, elem_type, tav.value, cc, tav.type).value;
+					}
 				}
-				for (isize i = elem_count; i < capacity; i++) {
-					values[i] = LLVMConstNull(lb_type(m, elem_type));
+				for (isize i = 0; i < capacity; i++) {
+					if (values[i] == nullptr) {
+						values[i] = LLVMConstNull(lb_type(m, elem_type));
+					}
 				}
 
-				res.value = lb_fill_fixed_capacity_dynamic_array(m, elem_count, original_type, values, cc);
+				res.value = lb_fill_fixed_capacity_dynamic_array(m, elem_index, original_type, values, cc);
 				return res;
 			}
 		} else if (is_type_simd_vector(type)) {

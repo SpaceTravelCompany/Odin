@@ -400,7 +400,7 @@ enum TypeInfoFlag : u32 {
 
 enum : int {
 	MATRIX_ELEMENT_COUNT_MIN = 1,
-	MATRIX_ELEMENT_COUNT_MAX = 16,
+	MATRIX_ELEMENT_COUNT_MAX = 64,
 	MATRIX_ELEMENT_MAX_SIZE = MATRIX_ELEMENT_COUNT_MAX * (2 * 8), // complex128
 
 	SIMD_ELEMENT_COUNT_MIN = 1,
@@ -776,6 +776,11 @@ gb_global Type *t_objc_Class = nullptr;
 gb_global Type *t_objc_Ivar  = nullptr;
 gb_global Type *t_objc_instancetype = nullptr; // Special distinct variant of t_objc_id used mimic auto-typing of instancetype* in Objective-C
 
+
+gb_global Type *t_c_va_list     = nullptr;
+gb_global Type *t_c_va_list_ptr = nullptr;
+
+
 enum OdinAtomicMemoryOrder : i32 {
 	OdinAtomicMemoryOrder_relaxed = 0, // unordered
 	OdinAtomicMemoryOrder_consume = 1, // monotonic
@@ -796,6 +801,34 @@ char const *OdinAtomicMemoryOrder_strings[OdinAtomicMemoryOrder_COUNT] = {
 };
 
 gb_global Type *t_atomic_memory_order = nullptr;
+
+
+
+
+enum OdinFastMathFlag : u8 {
+	OdinFastMath_Allow_Reassoc    = 0,
+	OdinFastMath_No_NaNs          = 1,
+	OdinFastMath_No_Infs          = 2,
+	OdinFastMath_No_Signed_Zeros  = 3,
+	OdinFastMath_Allow_Reciprocal = 4,
+	OdinFastMath_Allow_Contract   = 5,
+	OdinFastMath_Approx_Func      = 6,
+
+	OdinFastMath_COUNT,
+};
+
+char const *OdinFastMathFlag_strings[OdinFastMath_COUNT] = {
+	"Allow_Reassoc",
+	"No_NaNs",
+	"No_Infs",
+	"No_Signed_Zeros",
+	"Allow_Reciprocal",
+	"Allow_Contract",
+	"Approx_Func",
+};
+
+gb_global Type *t_fast_math_flag  = nullptr; // named enum
+gb_global Type *t_fast_math_flags = nullptr; // named bit_set
 
 
 
@@ -1332,6 +1365,8 @@ gb_internal bool is_type_integer_or_float(Type *t) {
 	return false;
 }
 
+
+
 gb_internal bool is_type_numeric(Type *t) {
 	t = base_type(t);
 	if (t == nullptr) { return false; }
@@ -1707,6 +1742,51 @@ gb_internal bool is_type_simd_vector(Type *t) {
 	t = base_type(t);
 	if (t == nullptr) { return false; }
 	return t->kind == Type_SimdVector;
+}
+
+
+gb_internal Type *type_unsigned_equivalent(Type *t) {
+	Type *original_type = t;
+	t = base_type(t);
+	if (is_type_simd_vector(t)) {
+		if (is_type_unsigned(t->SimdVector.elem)) {
+			return original_type;
+		}
+		return alloc_type_simd_vector(t->SimdVector.count, type_unsigned_equivalent(t->SimdVector.elem));
+	}
+
+	i64 sz = type_size_of(t);
+	switch (sz) {
+	case 1:  return t_u8;
+	case 2:  return t_u16;
+	case 4:  return t_u32;
+	case 8:  return t_u64;
+	case 16: return t_u128;
+	}
+	GB_PANIC("No known equivalent unsigned integer sized for %s", type_to_string(t));
+	return nullptr;
+}
+
+gb_internal Type *type_signed_equivalent(Type *t) {
+	Type *original_type = t;
+	t = base_type(t);
+	if (is_type_simd_vector(t)) {
+		if (!is_type_unsigned(t->SimdVector.elem)) {
+			return original_type;
+		}
+		return alloc_type_simd_vector(t->SimdVector.count, type_signed_equivalent(t->SimdVector.elem));
+	}
+	;
+	i64 sz = type_size_of(t);
+	switch (sz) {
+	case 1:  return t_i8;
+	case 2:  return t_i16;
+	case 4:  return t_i32;
+	case 8:  return t_i64;
+	case 16: return t_i128;
+	}
+	GB_PANIC("No known equivalent signed integer sized for %s", type_to_string(t));
+	return nullptr;
 }
 
 gb_internal Type *base_array_type(Type *t) {

@@ -739,6 +739,131 @@ gb_internal bool check_builtin_objc_procedure(CheckerContext *c, Operand *operan
 	}
 }
 
+gb_internal bool check_builtin_c_procedure(CheckerContext *c, Operand *operand, Ast *call, i32 id, Type *type_hint) {
+	String const &builtin_name = builtin_procs[id].name;
+
+	ast_node(ce, CallExpr, call);
+	switch (id) {
+	default:
+		GB_PANIC("Implement objective built-in procedure: %.*s", LIT(builtin_name));
+		return false;
+
+	case BuiltinProc_c_va_start: {
+		Operand list = {};
+		check_expr(c, &list, ce->args[0]);
+		if (list.mode == Addressing_Invalid) {
+			return false;
+		}
+		if (!are_types_identical(list.type, t_c_va_list_ptr)) {
+			gbString lpt = type_to_string(t_c_va_list_ptr);
+			gbString t = type_to_string(list.type);
+			error(list.expr, "'%.*s' expected a value of type %s, got type %s", LIT(builtin_name), lpt, t);
+			gb_string_free(t);
+			gb_string_free(lpt);
+			return false;
+		}
+
+		Operand args = {};
+		check_expr(c, &args, ce->args[1]);
+		if (list.mode == Addressing_Invalid) {
+			return false;
+		}
+		Entity *e = entity_of_node(args.expr);
+		if (e == nullptr || (e->flags & EntityFlag_CVarArg) == 0) {
+			error(list.expr, "'%.*s' expected a `#c_vararg` parameter", LIT(builtin_name));
+		}
+
+		operand->mode = Addressing_NoValue;
+		operand->type = nullptr;
+		return true;
+
+	} break;
+
+	case BuiltinProc_c_va_end: {
+		Operand list = {};
+		check_expr(c, &list, ce->args[0]);
+		if (list.mode == Addressing_Invalid) {
+			return false;
+		}
+		if (!are_types_identical(list.type, t_c_va_list_ptr)) {
+			gbString lpt = type_to_string(t_c_va_list_ptr);
+			gbString t = type_to_string(list.type);
+			error(list.expr, "'%.*s' expected a value of type %s, got type %s", LIT(builtin_name), lpt, t);
+			gb_string_free(t);
+			gb_string_free(lpt);
+			return false;
+		}
+
+		operand->mode = Addressing_NoValue;
+		operand->type = nullptr;
+		return true;
+
+	} break;
+
+	case BuiltinProc_c_va_copy: {
+		Operand dst = {};
+		check_expr(c, &dst, ce->args[0]);
+		if (dst.mode == Addressing_Invalid) {
+			return false;
+		}
+		if (!are_types_identical(dst.type, t_c_va_list_ptr)) {
+			gbString lpt = type_to_string(t_c_va_list_ptr);
+			gbString t = type_to_string(dst.type);
+			error(dst.expr, "'%.*s' expected a value of type %s, got type %s", LIT(builtin_name), lpt, t);
+			gb_string_free(t);
+			gb_string_free(lpt);
+			return false;
+		}
+
+		Operand src = {};
+		check_expr(c, &src, ce->args[1]);
+		if (src.mode == Addressing_Invalid) {
+			return false;
+		}
+		if (!are_types_identical(src.type, t_c_va_list_ptr)) {
+			gbString lpt = type_to_string(t_c_va_list_ptr);
+			gbString t = type_to_string(src.type);
+			error(src.expr, "'%.*s' expected a value of type %s, got type %s", LIT(builtin_name), lpt, t);
+			gb_string_free(t);
+			gb_string_free(lpt);
+			return false;
+		}
+
+		operand->mode = Addressing_NoValue;
+		operand->type = nullptr;
+		return true;
+
+	} break;
+
+	case BuiltinProc_c_va_arg: {
+		Operand list = {};
+		check_expr(c, &list, ce->args[0]);
+		if (list.mode == Addressing_Invalid) {
+			return false;
+		}
+		if (!are_types_identical(list.type, t_c_va_list_ptr)) {
+			gbString lpt = type_to_string(t_c_va_list_ptr);
+			gbString t = type_to_string(list.type);
+			error(list.expr, "'%.*s' expected a value of type %s, got type %s", LIT(builtin_name), lpt, t);
+			gb_string_free(t);
+			gb_string_free(lpt);
+			return false;
+		}
+
+
+		Type *type = check_type(c, ce->args[1]);
+		if (type == nullptr || type == t_invalid) {
+			error(ce->args[1], "'%.*s' expected a type as the second parameter to intrinsics.%.*s", LIT(builtin_name));
+			return false;
+		}
+
+		operand->mode = Addressing_Value;
+		operand->type = type;
+		return true;
+	} break;
+	}
+}
+
 gb_internal bool check_atomic_memory_order_argument(CheckerContext *c, Ast *expr, String const &builtin_name, OdinAtomicMemoryOrder *memory_order_, char const *extra_message = nullptr) {
 	Operand x = {};
 	check_expr_with_type_hint(c, &x, expr, t_atomic_memory_order);
@@ -781,6 +906,8 @@ gb_internal bool check_builtin_simd_operation(CheckerContext *c, Operand *operan
 	case BuiltinProc_simd_div:
 	case BuiltinProc_simd_min:
 	case BuiltinProc_simd_max:
+	case BuiltinProc_simd_pairwise_add:
+	case BuiltinProc_simd_pairwise_sub:
 		{
 			Operand x = {};
 			Operand y = {};
@@ -887,14 +1014,24 @@ gb_internal bool check_builtin_simd_operation(CheckerContext *c, Operand *operan
 			Operand x = {};
 			Operand y = {};
 			check_expr(c, &x, ce->args[0]); if (x.mode == Addressing_Invalid) return false;
-			check_expr_with_type_hint(c, &y, ce->args[1], x.type); if (y.mode == Addressing_Invalid) return false;
-			convert_to_typed(c, &y, x.type); if (y.mode == Addressing_Invalid) return false;
+			check_expr(c, &y, ce->args[1]); if (y.mode == Addressing_Invalid) return false;
 			if (!is_type_simd_vector(x.type)) {
 				error(x.expr, "'%.*s' expected a simd vector type", LIT(builtin_name));
 				return false;
 			}
 			if (!is_type_simd_vector(y.type)) {
-				error(y.expr, "'%.*s' expected a simd vector type", LIT(builtin_name));
+				if (is_type_untyped(y.type) || is_type_unsigned(y.type)) {
+					Type *rhs_type = type_unsigned_equivalent(x.type);
+					convert_to_typed(c, &y, rhs_type); if (y.mode == Addressing_Invalid) return false;
+				} else {
+					convert_to_typed(c, &y, x.type); if (y.mode == Addressing_Invalid) return false;
+				}
+			}
+
+			if (!is_type_simd_vector(y.type)) {
+				gbString s = type_to_string(y.type);
+				error(y.expr, "'%.*s' expected a simd vector type or unsigned integer, got %s", LIT(builtin_name), s);
+				gb_string_free(s);
 				return false;
 			}
 			GB_ASSERT(x.type->kind == Type_SimdVector);
@@ -1387,6 +1524,35 @@ gb_internal bool check_builtin_simd_operation(CheckerContext *c, Operand *operan
 			return true;
 		}
 
+	case BuiltinProc_simd_odd_even:
+		{
+			Operand x = {};
+			Operand y = {};
+			check_expr(c, &x, ce->args[0]); if (x.mode == Addressing_Invalid) return false;
+			check_expr_with_type_hint(c, &y, ce->args[1], x.type); if (y.mode == Addressing_Invalid) return false;
+			convert_to_typed(c, &y, x.type); if (y.mode == Addressing_Invalid) return false;
+			if (!is_type_simd_vector(x.type)) {
+				error(x.expr, "'%.*s' expected a simd vector type", LIT(builtin_name));
+				return false;
+			}
+			if (!is_type_simd_vector(y.type)) {
+				error(y.expr, "'%.*s' expected a simd vector type", LIT(builtin_name));
+				return false;
+			}
+			if (!are_types_identical(x.type, y.type)) {
+				gbString xs = type_to_string(x.type);
+				gbString ys = type_to_string(y.type);
+				error(x.expr, "'%.*s' expected 2 arguments of the same type, got '%s' vs '%s'", LIT(builtin_name), xs, ys);
+				gb_string_free(ys);
+				gb_string_free(xs);
+				return false;
+			}
+
+			operand->mode = Addressing_Value;
+			operand->type = x.type;
+			return true;
+		}
+
 	case BuiltinProc_simd_select:
 		{
 			Operand cond = {};
@@ -1492,16 +1658,77 @@ gb_internal bool check_builtin_simd_operation(CheckerContext *c, Operand *operan
 			return true;
 		}
 
-	case BuiltinProc_simd_ceil:
-	case BuiltinProc_simd_floor:
-	case BuiltinProc_simd_trunc:
-	case BuiltinProc_simd_nearest:
+	case BuiltinProc_simd_sums_of_n:
 		{
 			Operand x = {};
 			check_expr(c, &x, ce->args[0]); if (x.mode == Addressing_Invalid) return false;
 
 			if (!is_type_simd_vector(x.type)) {
-				error(x.expr, "'%.*s' expected a simd vector boolean type", LIT(builtin_name));
+				error(x.expr, "'%.*s' expected a simd vector type", LIT(builtin_name));
+				return false;
+			}
+			Type *bt = base_type(x.type);
+			u64 max_count = cast(u64)bt->SimdVector.count;
+			Type *elem = bt->SimdVector.elem;
+
+			u64 n = 0;
+
+			Operand y = {};
+			check_expr(c, &y, ce->args[1]); if (y.mode == Addressing_Invalid) return false;
+			{
+				Type *arg_type = base_type(y.type);
+				if (!is_type_integer(arg_type) || y.mode != Addressing_Constant) {
+					error(y.expr, "Indices to '%.*s' must be constant integers", LIT(builtin_name));
+					return false;
+				}
+
+				if (big_int_is_neg(&y.value.value_integer)) {
+					error(y.expr, "Negative '%.*s' index", LIT(builtin_name));
+					return false;
+				}
+
+				n = exact_value_to_u64(y.value);
+			}
+
+			if (!(is_power_of_two_u64(n) && n >= 2)) {
+				error(y.expr, "'%.*s' requires a power of two 'n' parameter >= 2, got %llu", LIT(builtin_name), cast(unsigned long long)n);
+				return false;
+			}
+
+			if (n > max_count) {
+				error(y.expr, "'%.*s' requires that the 'n' parameter is <= than the #simd length, got %llu vs %llu", LIT(builtin_name), cast(unsigned long long)n, cast(unsigned long long) max_count);
+				return false;
+			}
+
+			if (max_count % n != 0) {
+				error(y.expr, "'%.*s' requires the #simd length to be a multiple of the 'n' parameter, got #simd length=%llu, n=%llu", LIT(builtin_name), cast(unsigned long long) max_count, cast(unsigned long long)n);
+				return false;
+			}
+
+			operand->mode = Addressing_Value;
+
+			u64 result_count = max_count/n;
+			if (result_count == 1) {
+				operand->type = elem;
+			} else {
+				operand->type = alloc_type_simd_vector(result_count, elem);
+			}
+			return true;
+
+		}
+
+	case BuiltinProc_simd_ceil:
+	case BuiltinProc_simd_floor:
+	case BuiltinProc_simd_trunc:
+	case BuiltinProc_simd_nearest:
+	case BuiltinProc_simd_approx_recip:
+	case BuiltinProc_simd_approx_recip_sqrt:
+		{
+			Operand x = {};
+			check_expr(c, &x, ce->args[0]); if (x.mode == Addressing_Invalid) return false;
+
+			if (!is_type_simd_vector(x.type)) {
+				error(x.expr, "'%.*s' expected a simd vector type", LIT(builtin_name));
 				return false;
 			}
 			Type *elem = base_array_type(x.type);
@@ -1616,15 +1843,25 @@ gb_internal bool check_builtin_simd_operation(CheckerContext *c, Operand *operan
 			}
 			Type *elem = base_array_type(x.type);
 			i64 count = get_array_type_count(x.type);
-			i64 sz = type_size_of(elem);
-			Type *bit_elem = nullptr;
-			switch (sz) {
-			case 1: bit_elem = t_u8;  break;
-			case 2: bit_elem = t_u16; break;
-			case 4: bit_elem = t_u32; break;
-			case 8: bit_elem = t_u64; break;
+			Type *bit_elem = type_unsigned_equivalent(elem);
+
+			operand->type = alloc_type_simd_vector(count, bit_elem);
+			operand->mode = Addressing_Value;
+			return true;
+		}
+
+	case BuiltinProc_simd_to_bits_signed:
+		{
+			Operand x = {};
+			check_expr(c, &x, ce->args[0]); if (x.mode == Addressing_Invalid) return false;
+
+			if (!is_type_simd_vector(x.type)) {
+				error(x.expr, "'%.*s' expected a simd vector type", LIT(builtin_name));
+				return false;
 			}
-			GB_ASSERT(bit_elem != nullptr);
+			Type *elem = base_array_type(x.type);
+			i64 count = get_array_type_count(x.type);
+			Type *bit_elem = type_signed_equivalent(elem);
 
 			operand->type = alloc_type_simd_vector(count, bit_elem);
 			operand->mode = Addressing_Value;
@@ -2576,6 +2813,12 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 	case BuiltinProc_objc_super:
 		return check_builtin_objc_procedure(c, operand, call, id, type_hint);
 
+	case BuiltinProc_c_va_start:
+	case BuiltinProc_c_va_end:
+	case BuiltinProc_c_va_copy:
+	case BuiltinProc_c_va_arg:
+		return check_builtin_c_procedure(c, operand, call, id, type_hint);
+
 	case BuiltinProc___entry_point:
 		operand->mode = Addressing_NoValue;
 		operand->type = nullptr;
@@ -2954,6 +3197,14 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 
 		// check_assignment(c, operand, nullptr, str_lit("argument of 'type_of'"));
 		if (o.mode == Addressing_Invalid || o.mode == Addressing_Builtin) {
+			Entity *e = entity_of_node(expr);
+			if (e != nullptr &&
+			    e->state == EntityState_InProgress &&
+			    e->type == nullptr) {
+				gbString s = expr_to_string(expr);
+				error(expr, "Invalid cyclic type usage from 'type_of', got '%s'", s);
+				gb_string_free(s);
+			}
 			return false;
 		}
 		if (o.type == nullptr || o.type == t_invalid || is_type_asm_proc(o.type)) {
@@ -6347,8 +6598,6 @@ gb_internal bool check_builtin_procedure(CheckerContext *c, Operand *operand, As
 			switch (build_context.metrics.os) {
 			case TargetOs_darwin:
 			case TargetOs_linux:
-			case TargetOs_essence:
-			case TargetOs_haiku:
 				switch (build_context.metrics.arch) {
 				case TargetArch_i386:
 				case TargetArch_amd64:
