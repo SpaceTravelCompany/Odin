@@ -628,6 +628,7 @@ struct BuildContext {
 
 
 	int    ODIN_ANDROID_API_LEVEL;
+	int    ODIN_ANDROID_API_MINOR; // first decimal (e.g. 0 for "37.0", 1 for "37.1")
 
 	String ODIN_ANDROID_SDK;
 
@@ -1556,23 +1557,17 @@ gb_internal void init_android_values(bool with_sdk) {
 		if (!bc->minimum_os_version_string_given) {
 			bc->minimum_os_version_string = default_level;
 		}
-		BigInt level = {};
-		bool success = false;
-		big_int_from_string(&level, bc->minimum_os_version_string, &success);
-		if (!success) {
+		char *cstr = gb_alloc_array(temporary_allocator(), char, bc->minimum_os_version_string.len+1);
+		memcpy(cstr, bc->minimum_os_version_string.text, bc->minimum_os_version_string.len);
+		cstr[bc->minimum_os_version_string.len] = 0;
+		f64 level_f = atof(cstr);
+		if (level_f < 21.0) {
 			gb_printf_err("Warning: Invalid -minimum-os-version:%.*s for -subtarget:Android, defaulting to %.*s\n", LIT(bc->minimum_os_version_string), LIT(default_level));
-			bc->minimum_os_version_string = default_level;
-			big_int_from_string(&level, bc->minimum_os_version_string, &success);
-			GB_ASSERT(success);
-		}
-
-		i64 new_level = big_int_to_i64(&level);
-
-		if (new_level >= 21) {
-			bc->ODIN_ANDROID_API_LEVEL = cast(int)new_level;
+			bc->ODIN_ANDROID_API_LEVEL = 34;
+			bc->ODIN_ANDROID_API_MINOR = 0;
 		} else {
-			gb_printf_err("Warning: Invalid -minimum-os-version:%.*s for -subtarget:Android, defaulting to %.*s\n", LIT(bc->minimum_os_version_string), LIT(default_level));
-			bc->ODIN_ANDROID_API_LEVEL = atoi(cast(char const *)default_level.text);
+			bc->ODIN_ANDROID_API_LEVEL = cast(int)level_f;
+			bc->ODIN_ANDROID_API_MINOR = cast(int)(level_f * 10.0 + 0.5) % 10;
 		}
 	}
 	bc->ODIN_ANDROID_NDK           = normalize_path(permanent_allocator(), make_string_c(gb_get_env("ODIN_ANDROID_NDK", permanent_allocator())), NIX_SEPARATOR_STRING);

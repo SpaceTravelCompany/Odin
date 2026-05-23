@@ -107,20 +107,31 @@ i32 bundle_android(String original_init_directory) {
 	}
 
 	if (closest_number_idx < 0) {
-		gb_printf_err("Unable to find any Android SDK/API Level in %.*s meeting the minimum API level of %d\n", LIT(android_sdk_build_tools), ODIN_ANDROID_API_LEVEL);
+		gb_printf_err("Unable to find any Android SDK/API Level in %.*s meeting the minimum API level of %d.%d\n", LIT(android_sdk_build_tools), build_context.ODIN_ANDROID_API_LEVEL, build_context.ODIN_ANDROID_API_MINOR);
 		return 1;
 	}
 
 	String api_number = possible_valid_dirs[closest_number_idx].name;
 
 	android_sdk_build_tools = concatenate_strings(temporary_allocator(), android_sdk_build_tools, api_number);
+	android_sdk_build_tools = normalize_path(temporary_allocator(), android_sdk_build_tools, NIX_SEPARATOR_STRING);
+
+	// try android-{int} → android-{int}.{minor}
 	String android_sdk_platforms = concatenate_strings(temporary_allocator(),
 		build_context.ODIN_ANDROID_SDK,
-		make_string_c(gb_bprintf("platforms/android-%d/", dir_numbers[closest_number_idx]))
+		make_string_c(gb_bprintf("platforms/android-%d/", build_context.ODIN_ANDROID_API_LEVEL))
 	);
-
-	android_sdk_build_tools = normalize_path(temporary_allocator(), android_sdk_build_tools, NIX_SEPARATOR_STRING);
-	android_sdk_platforms   = normalize_path(temporary_allocator(), android_sdk_platforms,   NIX_SEPARATOR_STRING);
+	android_sdk_platforms = normalize_path(temporary_allocator(), android_sdk_platforms, NIX_SEPARATOR_STRING);
+	{
+		String jar_path = concatenate_strings(temporary_allocator(), android_sdk_platforms, str_lit("android.jar"));
+		if (!gb_file_exists((const char *)jar_path.text)) {
+			android_sdk_platforms = concatenate_strings(temporary_allocator(),
+				build_context.ODIN_ANDROID_SDK,
+				make_string_c(gb_bprintf("platforms/android-%d.%d/", build_context.ODIN_ANDROID_API_LEVEL, build_context.ODIN_ANDROID_API_MINOR))
+			);
+			android_sdk_platforms = normalize_path(temporary_allocator(), android_sdk_platforms, NIX_SEPARATOR_STRING);
+		}
+	}
 
 	gbString cmd = gb_string_make(heap_allocator(), "");
 	defer (gb_string_free(cmd));

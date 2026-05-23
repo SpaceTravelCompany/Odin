@@ -698,7 +698,7 @@ try_cross_linking:;
 
 				glue = gb_string_append_fmt(glue, "bin/clang");
 				glue = gb_string_append_fmt(glue, " --target=%.*s%d ", LIT(build_context.metrics.target_triplet), ODIN_ANDROID_API_LEVEL);
-				glue = gb_string_appendc(glue, "-c \"");
+				glue = gb_string_appendc(glue, "-fPIC -c \"");
 				glue = gb_string_append_length(glue, ODIN_ANDROID_NDK.text, ODIN_ANDROID_NDK.len);
 				glue = gb_string_appendc(glue, "sources/android/native_app_glue/android_native_app_glue.c");
 				glue = gb_string_appendc(glue, "\" ");
